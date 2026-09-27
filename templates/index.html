@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>AI Phishing Detector</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+<!-- ── Nav ──────────────────────────────────────────────────────────────── -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <span class="shield-icon">🛡️</span>
+    <span class="brand-text">PhishGuard <span class="brand-ai">AI</span></span>
+  </div>
+  <div class="nav-links">
+    <a href="#" class="nav-link active">Detector</a>
+    <a href="#how-it-works" class="nav-link">How It Works</a>
+    <a href="#metrics" class="nav-link" id="metrics-nav-link">Model Stats</a>
+  </div>
+</nav>
+
+<!-- ── Hero ─────────────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">Explainable AI · Security Analysis</div>
+    <h1 class="hero-title">
+      Detect Phishing URLs<br/>
+      <span class="gradient-text">Before They Strike</span>
+    </h1>
+    <p class="hero-sub">
+      Powered by an ensemble of Random Forest, XGBoost, and Logistic Regression
+      with SHAP-based explanations — so you always know <em>why</em> a URL is flagged.
+    </p>
+    {% if accuracy %}
+    <div class="accuracy-badge">
+      <span class="acc-dot"></span>
+      Model Accuracy: <strong>{{ "%.1f"|format(accuracy * 100) }}%</strong>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- ── Analyser Card ──────────────────────────────────────────────────────── -->
+<main class="main-content">
+  <div class="analyser-card">
+    <h2 class="card-title">URL Security Analyser</h2>
+    <p class="card-sub">Paste any URL below to instantly analyse it for phishing indicators.</p>
+
+    <div class="input-group">
+      <span class="input-icon">🔗</span>
+      <input
+        type="text"
+        id="url-input"
+        class="url-input"
+        placeholder="https://example.com/login?redirect=..."
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button class="btn-analyse" id="analyse-btn" onclick="analyseURL()">
+        <span id="btn-text">Analyse</span>
+        <span id="btn-spinner" class="spinner hidden"></span>
+      </button>
+    </div>
+
+    <!-- Quick-test examples -->
+    <div class="example-urls">
+      <span class="example-label">Try:</span>
+      <button class="example-btn" onclick="setURL('https://www.google.com')">Google</button>
+      <button class="example-btn phish" onclick="setURL('http://paypa1-secure-login.com/verify?user=victim&token=abc123')">Phishing #1</button>
+      <button class="example-btn phish" onclick="setURL('http://192.168.1.1/login/account-update.php')">IP-based</button>
+      <button class="example-btn phish" onclick="setURL('http://apple-id-verify.support/unlock?credential=reset')">Phishing #2</button>
+      <button class="example-btn" onclick="setURL('https://github.com/trending')">GitHub</button>
+    </div>
+  </div>
+
+  <!-- ── Result panel ───────────────────────────────────────────────────── -->
+  <div id="result-panel" class="result-panel hidden">
+
+    <!-- Verdict banner -->
+    <div id="verdict-banner" class="verdict-banner">
+      <div class="verdict-icon" id="verdict-icon"></div>
+      <div class="verdict-details">
+        <div class="verdict-label" id="verdict-label"></div>
+        <div class="verdict-url"  id="verdict-url"></div>
+      </div>
+      <div class="verdict-prob">
+        <div class="prob-circle" id="prob-circle">
+          <svg viewBox="0 0 36 36">
+            <path class="circle-bg"  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+            <path class="circle-fill" id="circle-fill"
+                  stroke-dasharray="0, 100"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          </svg>
+          <span class="prob-text" id="prob-text"></span>
+        </div>
+        <div class="prob-label">Phishing Probability</div>
+      </div>
+    </div>
+
+    <!-- Flags -->
+    <div id="flags-section" class="section flags-section">
+      <h3 class="section-title">⚠️ Security Flags</h3>
+      <div id="flags-list"></div>
+    </div>
+
+    <!-- SHAP chart -->
+    <div class="section">
+      <h3 class="section-title">🔍 Explainability — SHAP Feature Contributions</h3>
+      <p class="section-desc">
+        Positive values (red) push toward phishing; negative values (green) push toward legitimate.
+      </p>
+      <div class="chart-container">
+        <img id="shap-chart" class="shap-chart" src="" alt="SHAP chart"/>
+      </div>
+    </div>
+
+    <!-- Top contributors -->
+    <div class="section">
+      <h3 class="section-title">📊 Top Contributing Features</h3>
+      <div id="top-features" class="features-grid"></div>
+    </div>
+
+    <!-- All features -->
+    <div class="section">
+      <h3 class="section-title">📋 All Extracted Features</h3>
+      <div class="features-table-wrap">
+        <table class="features-table" id="features-table">
+          <thead>
+            <tr><th>Feature</th><th>Value</th><th>SHAP Impact</th></tr>
+          </thead>
+          <tbody id="features-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="section actions-row">
+      <button class="btn-report" onclick="downloadReport()">
+        📄 Download PDF Report
+      </button>
+      <button class="btn-secondary" onclick="resetPanel()">
+        🔄 Analyse Another URL
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ── How it works ───────────────────────────────────────────────────── -->
+  <section id="how-it-works" class="how-section">
+    <h2 class="section-heading">How It Works</h2>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">01</div>
+        <h3>Feature Extraction</h3>
+        <p>30 URL features are extracted: length, entropy, subdomains, keywords,
+           special characters, TLD, IP usage, and more.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">02</div>
+        <h3>Ensemble ML Model</h3>
+        <p>A soft-voting ensemble of Random Forest, XGBoost, and Logistic
+           Regression predicts the phishing probability.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">03</div>
+        <h3>SHAP Explanation</h3>
+        <p>SHAP (SHapley Additive exPlanations) breaks down exactly which
+           features pushed the decision and by how much.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">04</div>
+        <h3>Security Report</h3>
+        <p>A downloadable PDF report summarises the verdict, risk flags,
+           SHAP chart, and actionable recommendations.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Model metrics ─────────────────────────────────────────────────── -->
+  <section id="metrics" class="metrics-section">
+    <h2 class="section-heading">Model Performance</h2>
+    <div id="metrics-grid" class="metrics-grid">
+      <p class="loading-txt">Loading metrics…</p>
+    </div>
+  </section>
+</main>
+
+<!-- ── Footer ────────────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <p>AI-Based Phishing URL Detection · Information Security Project</p>
+  <p class="footer-sub">Built with Random Forest · XGBoost · SHAP · Flask</p>
+</footer>
+
+<!-- ── Error toast ────────────────────────────────────────────────────────── -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

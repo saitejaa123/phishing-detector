@@ -1,0 +1,200 @@
+{
+  "random_forest": {
+    "accuracy": 1.0,
+    "auc_roc": 1.0,
+    "confusion_matrix": [
+      [
+        100,
+        0
+      ],
+      [
+        0,
+        100
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      }
+    }
+  },
+  "xgboost": {
+    "accuracy": 1.0,
+    "auc_roc": 1.0,
+    "confusion_matrix": [
+      [
+        100,
+        0
+      ],
+      [
+        0,
+        100
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      }
+    }
+  },
+  "logistic_regression": {
+    "accuracy": 1.0,
+    "auc_roc": 1.0,
+    "confusion_matrix": [
+      [
+        100,
+        0
+      ],
+      [
+        0,
+        100
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      }
+    }
+  },
+  "ensemble": {
+    "accuracy": 1.0,
+    "auc_roc": 1.0,
+    "confusion_matrix": [
+      [
+        100,
+        0
+      ],
+      [
+        0,
+        100
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 100.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 200.0
+      }
+    },
+    "cv_mean": 1.0,
+    "cv_std": 0.0
+  },
+  "feature_importances": {
+    "url_length": 0.02600399151934853,
+    "domain_length": 0.12832181035425366,
+    "path_length": 0.0027476779322711674,
+    "num_dots": 0.008452164021606486,
+    "num_hyphens": 0.053535146868264036,
+    "num_underscores": 0.00012428443491484405,
+    "num_slashes": 0.0016942146163532418,
+    "num_at_symbols": 0.0,
+    "num_question_marks": 0.00016039526196160242,
+    "num_ampersands": 0.001497374799956449,
+    "num_equals": 0.0009342323648236867,
+    "num_digits": 0.01776430566647995,
+    "num_special_chars": 0.0,
+    "has_ip_address": 0.0008055145231823109,
+    "has_https": 0.2408700163494707,
+    "has_http": 0.20357085230163996,
+    "subdomain_count": 0.032809038686191096,
+    "is_shortener": 0.000384265199444825,
+    "has_phishing_keyword": 0.02731477899836927,
+    "phishing_keyword_count": 0.07346541472943768,
+    "entropy": 0.010261213919382124,
+    "digit_ratio": 0.012340808203585138,
+    "letter_ratio": 0.007665635396383963,
+    "suspicious_tld": 0.14787698270516636,
+    "double_slash_redirect": 0.0,
+    "prefix_suffix_hyphen": 0.0,
+    "abnormal_url": 0.0,
+    "path_extension_suspicious": 0.0012367264924816796,
+    "query_param_count": 0.0001631546550312307,
+    "has_port": 0.0
+  }
+}
