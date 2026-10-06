@@ -2,12 +2,8 @@ services:
   - type: web
     name: phishing-detector
     env: python
-    buildCommand: pip install --prefer-binary -r requirements.txt
-    startCommand: python train.py && gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120
+    buildCommand: pip install --prefer-binary -r requirements.txt && python train.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 180 --workers 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.11
-    disk:
-      name: models-data
-      mountPath: /opt/render/project/src
-      sizeGB: 1

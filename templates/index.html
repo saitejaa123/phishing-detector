@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AI Phishing Detector</title>
+  <title>PhishGuard AI — Phishing URL Detector</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
@@ -17,23 +17,24 @@
     <span class="brand-text">PhishGuard <span class="brand-ai">AI</span></span>
   </div>
   <div class="nav-links">
-    <a href="#" class="nav-link active">Detector</a>
+    <a href="#analyser"    class="nav-link active">Detector</a>
     <a href="#how-it-works" class="nav-link">How It Works</a>
-    <a href="#metrics" class="nav-link" id="metrics-nav-link">Model Stats</a>
+    <a href="#metrics"      class="nav-link">Model Stats</a>
+    <a href="#history"      class="nav-link">History</a>
   </div>
 </nav>
 
 <!-- ── Hero ─────────────────────────────────────────────────────────────── -->
 <section class="hero">
   <div class="hero-content">
-    <div class="hero-badge">Explainable AI · Security Analysis</div>
+    <div class="hero-badge">Explainable AI · DNS Intel · Threat Feeds · Typosquat Detection</div>
     <h1 class="hero-title">
       Detect Phishing URLs<br/>
-      <span class="gradient-text">Before They Strike</span>
+      <span class="gradient-text">With Full Security Intelligence</span>
     </h1>
     <p class="hero-sub">
-      Powered by an ensemble of Random Forest, XGBoost, and Logistic Regression
-      with SHAP-based explanations — so you always know <em>why</em> a URL is flagged.
+      ML ensemble + SHAP explainability + live DNS/WHOIS + threat intel feeds
+      + typosquatting detection + behavioral mutation analysis.
     </p>
     {% if accuracy %}
     <div class="accuracy-badge">
@@ -42,42 +43,54 @@
     </div>
     {% endif %}
   </div>
+
+  <!-- Mini stats row -->
+  <div class="hero-stats">
+    <div class="hstat"><span class="hstat-n">30</span><span class="hstat-l">URL Features</span></div>
+    <div class="hstat"><span class="hstat-n">4</span><span class="hstat-l">ML Models</span></div>
+    <div class="hstat"><span class="hstat-n">5</span><span class="hstat-l">Intel Sources</span></div>
+    <div class="hstat"><span class="hstat-n">9</span><span class="hstat-l">Mutation Types</span></div>
+  </div>
 </section>
 
-<!-- ── Analyser Card ──────────────────────────────────────────────────────── -->
-<main class="main-content">
+<!-- ── Main ──────────────────────────────────────────────────────────────── -->
+<main class="main-content" id="analyser">
+
+  <!-- ── Input card ──────────────────────────────────────────────────────── -->
   <div class="analyser-card">
     <h2 class="card-title">URL Security Analyser</h2>
-    <p class="card-sub">Paste any URL below to instantly analyse it for phishing indicators.</p>
+    <p class="card-sub">
+      <strong>Quick Scan</strong> uses the ML model only (instant).
+      <strong>Deep Scan</strong> also runs DNS/WHOIS, threat feeds, typosquatting &amp; mutation analysis (5-10 sec).
+    </p>
 
     <div class="input-group">
       <span class="input-icon">🔗</span>
-      <input
-        type="text"
-        id="url-input"
-        class="url-input"
-        placeholder="https://example.com/login?redirect=..."
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <button class="btn-analyse" id="analyse-btn" onclick="analyseURL()">
-        <span id="btn-text">Analyse</span>
-        <span id="btn-spinner" class="spinner hidden"></span>
+      <input type="text" id="url-input" class="url-input"
+             placeholder="https://example.com/login?redirect=..."
+             autocomplete="off" spellcheck="false"/>
+      <button class="btn-quick" id="quick-btn" onclick="runScan('quick')">
+        <span id="quick-text">Quick Scan</span>
+        <span id="quick-spinner" class="spinner hidden"></span>
+      </button>
+      <button class="btn-deep" id="deep-btn" onclick="runScan('deep')">
+        <span id="deep-text">⚡ Deep Scan</span>
+        <span id="deep-spinner" class="spinner hidden"></span>
       </button>
     </div>
 
-    <!-- Quick-test examples -->
     <div class="example-urls">
       <span class="example-label">Try:</span>
       <button class="example-btn" onclick="setURL('https://www.google.com')">Google</button>
-      <button class="example-btn phish" onclick="setURL('http://paypa1-secure-login.com/verify?user=victim&token=abc123')">Phishing #1</button>
-      <button class="example-btn phish" onclick="setURL('http://192.168.1.1/login/account-update.php')">IP-based</button>
-      <button class="example-btn phish" onclick="setURL('http://apple-id-verify.support/unlock?credential=reset')">Phishing #2</button>
       <button class="example-btn" onclick="setURL('https://github.com/trending')">GitHub</button>
+      <button class="example-btn phish" onclick="setURL('http://paypa1-secure-login.com/verify?user=victim&token=abc123')">PayPal Phish</button>
+      <button class="example-btn phish" onclick="setURL('http://apple-id-verify.support/unlock?credential=reset')">Apple Phish</button>
+      <button class="example-btn phish" onclick="setURL('http://192.168.1.1/login/account-update.php')">IP-based</button>
+      <button class="example-btn phish" onclick="setURL('http://microsoft-alert.support/windows/security/update')">MS Scam</button>
     </div>
   </div>
 
-  <!-- ── Result panel ───────────────────────────────────────────────────── -->
+  <!-- ── Result panel ──────────────────────────────────────────────────────── -->
   <div id="result-panel" class="result-panel hidden">
 
     <!-- Verdict banner -->
@@ -85,53 +98,107 @@
       <div class="verdict-icon" id="verdict-icon"></div>
       <div class="verdict-details">
         <div class="verdict-label" id="verdict-label"></div>
-        <div class="verdict-url"  id="verdict-url"></div>
+        <div class="verdict-url"   id="verdict-url"></div>
+        <div id="scan-type-badge"  class="scan-badge"></div>
       </div>
       <div class="verdict-prob">
         <div class="prob-circle" id="prob-circle">
           <svg viewBox="0 0 36 36">
-            <path class="circle-bg"  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
-            <path class="circle-fill" id="circle-fill"
-                  stroke-dasharray="0, 100"
+            <path class="circle-bg"   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+            <path class="circle-fill" id="circle-fill" stroke-dasharray="0,100"
                   d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
           </svg>
           <span class="prob-text" id="prob-text"></span>
         </div>
-        <div class="prob-label">Phishing Probability</div>
+        <div class="prob-label" id="prob-label-txt">Phishing Probability</div>
       </div>
     </div>
 
-    <!-- Flags -->
-    <div id="flags-section" class="section flags-section">
+    <!-- Score breakdown (deep scan only) -->
+    <div id="score-breakdown" class="section hidden">
+      <h3 class="section-title">📊 Composite Risk Score Breakdown</h3>
+      <div class="score-grid" id="score-grid"></div>
+    </div>
+
+    <!-- Security flags -->
+    <div class="section">
       <h3 class="section-title">⚠️ Security Flags</h3>
       <div id="flags-list"></div>
     </div>
 
     <!-- SHAP chart -->
     <div class="section">
-      <h3 class="section-title">🔍 Explainability — SHAP Feature Contributions</h3>
-      <p class="section-desc">
-        Positive values (red) push toward phishing; negative values (green) push toward legitimate.
-      </p>
+      <h3 class="section-title">🔍 SHAP Feature Contributions</h3>
+      <p class="section-desc">Red bars push toward phishing; green bars push toward legitimate.</p>
       <div class="chart-container">
         <img id="shap-chart" class="shap-chart" src="" alt="SHAP chart"/>
       </div>
     </div>
 
-    <!-- Top contributors -->
+    <!-- Top features -->
     <div class="section">
-      <h3 class="section-title">📊 Top Contributing Features</h3>
+      <h3 class="section-title">📋 Top Contributing Features</h3>
       <div id="top-features" class="features-grid"></div>
     </div>
 
-    <!-- All features -->
+    <!-- ── NOVELTY: DNS Intelligence ───────────────────────────────────────── -->
+    <div id="dns-section" class="section novelty-section hidden">
+      <div class="novelty-header">
+        <span class="novelty-badge">NOVEL</span>
+        <h3 class="section-title" style="margin-bottom:0">🌐 DNS &amp; WHOIS Intelligence</h3>
+      </div>
+      <p class="section-desc">Live domain registration data, DNS records, SSL certificate analysis and reverse-DNS checks.</p>
+      <div class="dns-grid" id="dns-grid"></div>
+      <div class="risk-indicators" id="dns-indicators"></div>
+    </div>
+
+    <!-- ── NOVELTY: Typosquatting ───────────────────────────────────────────── -->
+    <div id="typo-section" class="section novelty-section hidden">
+      <div class="novelty-header">
+        <span class="novelty-badge">NOVEL</span>
+        <h3 class="section-title" style="margin-bottom:0">🔤 Typosquatting &amp; Brand Impersonation</h3>
+      </div>
+      <p class="section-desc">Detects homoglyph attacks, combosquatting, subdomain spoofing and character substitution against 20 known brands.</p>
+      <div id="typo-result"></div>
+    </div>
+
+    <!-- ── NOVELTY: Threat Intelligence ────────────────────────────────────── -->
+    <div id="intel-section" class="section novelty-section hidden">
+      <div class="novelty-header">
+        <span class="novelty-badge">NOVEL</span>
+        <h3 class="section-title" style="margin-bottom:0">🛰️ Threat Intelligence Feeds</h3>
+      </div>
+      <p class="section-desc">Cross-referenced against OpenPhish community feed, signature pattern engine and TLD reputation database.</p>
+      <div id="intel-result"></div>
+    </div>
+
+    <!-- ── NOVELTY: Mutation Analysis ──────────────────────────────────────── -->
+    <div id="mutation-section" class="section novelty-section hidden">
+      <div class="novelty-header">
+        <span class="novelty-badge">NOVEL</span>
+        <h3 class="section-title" style="margin-bottom:0">🧬 Behavioral Mutation Analysis</h3>
+      </div>
+      <p class="section-desc">
+        Generates plausible attack variants of this domain and scores each one —
+        revealing the attacker's toolbox and the domain's attack surface.
+      </p>
+      <div id="mutation-summary" class="mutation-summary"></div>
+      <div class="mutation-table-wrap">
+        <table class="mutation-table" id="mutation-table">
+          <thead><tr>
+            <th>Mutated URL</th><th>Attack Type</th><th>Risk Score</th><th>Level</th>
+          </tr></thead>
+          <tbody id="mutation-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- All features table -->
     <div class="section">
-      <h3 class="section-title">📋 All Extracted Features</h3>
+      <h3 class="section-title">🗂️ All Extracted Features</h3>
       <div class="features-table-wrap">
-        <table class="features-table" id="features-table">
-          <thead>
-            <tr><th>Feature</th><th>Value</th><th>SHAP Impact</th></tr>
-          </thead>
+        <table class="features-table">
+          <thead><tr><th>Feature</th><th>Value</th><th>SHAP Impact</th></tr></thead>
           <tbody id="features-tbody"></tbody>
         </table>
       </div>
@@ -139,65 +206,107 @@
 
     <!-- Actions -->
     <div class="section actions-row">
-      <button class="btn-report" onclick="downloadReport()">
-        📄 Download PDF Report
-      </button>
-      <button class="btn-secondary" onclick="resetPanel()">
-        🔄 Analyse Another URL
-      </button>
+      <button class="btn-report"    onclick="downloadReport()">📄 Download PDF Report</button>
+      <button class="btn-secondary" onclick="resetPanel()">🔄 Analyse Another URL</button>
     </div>
-
   </div>
 
-  <!-- ── How it works ───────────────────────────────────────────────────── -->
+  <!-- ── How it works ───────────────────────────────────────────────────────── -->
   <section id="how-it-works" class="how-section">
     <h2 class="section-heading">How It Works</h2>
     <div class="steps-grid">
       <div class="step-card">
         <div class="step-num">01</div>
         <h3>Feature Extraction</h3>
-        <p>30 URL features are extracted: length, entropy, subdomains, keywords,
-           special characters, TLD, IP usage, and more.</p>
+        <p>30 structural URL features are extracted: entropy, subdomains, keywords, TLD, special chars, and more.</p>
       </div>
       <div class="step-card">
         <div class="step-num">02</div>
         <h3>Ensemble ML Model</h3>
-        <p>A soft-voting ensemble of Random Forest, XGBoost, and Logistic
-           Regression predicts the phishing probability.</p>
+        <p>Soft-voting ensemble of Random Forest, XGBoost and Logistic Regression predicts phishing probability.</p>
       </div>
       <div class="step-card">
         <div class="step-num">03</div>
-        <h3>SHAP Explanation</h3>
-        <p>SHAP (SHapley Additive exPlanations) breaks down exactly which
-           features pushed the decision and by how much.</p>
+        <h3>SHAP Explainability</h3>
+        <p>SHAP breaks down exactly which features drove the decision and by how much — full transparency.</p>
+      </div>
+      <div class="step-card novel-card">
+        <div class="step-num">04</div>
+        <h3>DNS &amp; WHOIS Intel <span class="new-tag">NEW</span></h3>
+        <p>Live domain age, registrar reputation, MX records, SSL cert freshness and reverse DNS checks.</p>
+      </div>
+      <div class="step-card novel-card">
+        <div class="step-num">05</div>
+        <h3>Typosquat Detection <span class="new-tag">NEW</span></h3>
+        <p>Levenshtein + bigram similarity + homoglyph detection against 20 major brands.</p>
+      </div>
+      <div class="step-card novel-card">
+        <div class="step-num">06</div>
+        <h3>Threat Intel Feeds <span class="new-tag">NEW</span></h3>
+        <p>OpenPhish live feed + 9 signature patterns + TLD reputation database cross-reference.</p>
+      </div>
+      <div class="step-card novel-card">
+        <div class="step-num">07</div>
+        <h3>Mutation Analysis <span class="new-tag">NEW</span></h3>
+        <p>Generates 9 attack mutation types and scores each variant to quantify the domain's attack surface.</p>
       </div>
       <div class="step-card">
-        <div class="step-num">04</div>
-        <h3>Security Report</h3>
-        <p>A downloadable PDF report summarises the verdict, risk flags,
-           SHAP chart, and actionable recommendations.</p>
+        <div class="step-num">08</div>
+        <h3>PDF Security Report</h3>
+        <p>Downloadable report with verdict, SHAP chart, all features and security recommendations.</p>
       </div>
     </div>
   </section>
 
-  <!-- ── Model metrics ─────────────────────────────────────────────────── -->
+  <!-- ── Model metrics ──────────────────────────────────────────────────────── -->
   <section id="metrics" class="metrics-section">
     <h2 class="section-heading">Model Performance</h2>
     <div id="metrics-grid" class="metrics-grid">
       <p class="loading-txt">Loading metrics…</p>
     </div>
   </section>
+
+  <!-- ── Session History Dashboard ─────────────────────────────────────────── -->
+  <section id="history" class="history-section">
+    <div class="history-header-row">
+      <h2 class="section-heading" style="margin-bottom:0">📜 Session Scan History</h2>
+      <button class="btn-clear-history" onclick="clearHistory()">Clear</button>
+    </div>
+    <p class="section-desc" style="text-align:center;margin-bottom:1.5rem">
+      All URLs scanned this session — updates live after each scan.
+    </p>
+
+    <!-- Risk distribution bar -->
+    <div class="risk-dist-wrap">
+      <div class="risk-dist-bar" id="risk-dist-bar"></div>
+      <div class="risk-dist-legend">
+        <span class="rdl high">Phishing</span>
+        <span class="rdl medium">Suspicious</span>
+        <span class="rdl low">Legitimate</span>
+      </div>
+    </div>
+
+    <div class="history-table-wrap">
+      <table class="history-table" id="history-table">
+        <thead><tr>
+          <th>#</th><th>URL</th><th>Verdict</th><th>Risk %</th><th>Time</th><th>Type</th>
+        </tr></thead>
+        <tbody id="history-tbody">
+          <tr><td colspan="6" class="history-empty">No scans yet — analyse a URL above.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
 </main>
 
-<!-- ── Footer ────────────────────────────────────────────────────────────── -->
+<!-- ── Footer ─────────────────────────────────────────────────────────────── -->
 <footer class="footer">
-  <p>AI-Based Phishing URL Detection · Information Security Project</p>
-  <p class="footer-sub">Built with Random Forest · XGBoost · SHAP · Flask</p>
+  <p>AI-Based Phishing URL Detection with Explainable Security Analysis</p>
+  <p class="footer-sub">ML Ensemble · SHAP · DNS/WHOIS · Threat Feeds · Typosquatting · Mutation Analysis · Flask</p>
 </footer>
 
-<!-- ── Error toast ────────────────────────────────────────────────────────── -->
 <div id="toast" class="toast hidden"></div>
-
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

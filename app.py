@@ -1,12 +1,15 @@
 """
 Flask Web Application
 AI-Based Phishing URL Detection with Explainable Security Analysis
++ Novelty Features: DNS Intelligence, Typosquatting, Threat Intel, Mutation Analysis
 """
 
 import json
 import os
 import sys
 import traceback
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_file
@@ -19,12 +22,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from feature_extractor import extract_features, FEATURE_NAMES
 from explainer import PhishingExplainer
 
-app = Flask(__name__)
+app  = Flask(__name__)
 CORS(app)
 
-# ── Lazy-load models / explainer ──────────────────────────────────────────────
+# ── In-memory session scan history (last 50 scans) ───────────────────────────
+_scan_history: deque = deque(maxlen=50)
+
+# ── Lazy-loaded singletons ────────────────────────────────────────────────────
 _explainer: PhishingExplainer = None
-_model_metrics: dict = {}
+_model_metrics: dict          = {}
 
 
 def _get_explainer() -> PhishingExplainer:
@@ -40,123 +46,352 @@ def _get_explainer() -> PhishingExplainer:
 def _get_metrics() -> dict:
     global _model_metrics
     if not _model_metrics:
-        metrics_path = ROOT / "models" / "metrics.json"
-        if metrics_path.exists():
-            with open(metrics_path) as f:
+        p = ROOT / "models" / "metrics.json"
+        if p.exists():
+            with open(p) as f:
                 _model_metrics = json.load(f)
     return _model_metrics
 
 
 def _train_models():
-    """Train models if they don't exist yet."""
     print("[*] Models not found — starting training …")
     from train_model import train
     train()
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+def _build_flags(features: dict) -> list:
+    flags = []
+    if features["has_ip_address"]:
+        flags.append({"severity": "high",
+                      "message": "Domain is a raw IP address"})
+    if not features["has_https"]:
+        flags.append({"severity": "medium",
+                      "message": "URL does not use HTTPS"})
+    if features["is_shortener"]:
+        flags.append({"severity": "medium",
+                      "message": "URL uses a known shortening service"})
+    if features["has_phishing_keyword"]:
+        flags.append({"severity": "high",
+                      "message": f"URL contains {features['phishing_keyword_count']} phishing keyword(s)"})
+    if features["num_at_symbols"] > 0:
+        flags.append({"severity": "high",
+                      "message": "@ symbol in URL — credential redirect trick"})
+    if features["subdomain_count"] >= 3:
+        flags.append({"severity": "medium",
+                      "message": f"Excessive subdomains ({features['subdomain_count']})"})
+    if features["url_length"] > 75:
+        flags.append({"severity": "low",
+                      "message": f"Unusually long URL ({features['url_length']} chars)"})
+    if features["double_slash_redirect"]:
+        flags.append({"severity": "high",
+                      "message": "Double-slash redirect in path"})
+    if features["prefix_suffix_hyphen"]:
+        flags.append({"severity": "medium",
+                      "message": "Domain starts or ends with a hyphen"})
+    if features["path_extension_suspicious"]:
+        flags.append({"severity": "medium",
+                      "message": "Path ends with a suspicious file extension"})
+    if features["suspicious_tld"]:
+        flags.append({"severity": "low",
+                      "message": "TLD is not among common trusted TLDs"})
+    if features["entropy"] > 4.5:
+        flags.append({"severity": "low",
+                      "message": f"High URL entropy ({features['entropy']}) — possible obfuscation"})
+    return flags
+
+
+def _verdict_from_prob(prob: float):
+    if prob >= 0.5:
+        return 1, "PHISHING", "high"
+    if prob >= 0.35:
+        return 0, "SUSPICIOUS", "medium"
+    return 0, "LEGITIMATE", "low"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ROUTES — Core
+# ══════════════════════════════════════════════════════════════════════════════
 
 @app.route("/")
 def index():
-    metrics = _get_metrics()
-    ensemble_acc = None
-    if metrics.get("ensemble"):
-        ensemble_acc = metrics["ensemble"].get("accuracy")
+    metrics      = _get_metrics()
+    ensemble_acc = metrics.get("ensemble", {}).get("accuracy")
     return render_template("index.html", accuracy=ensemble_acc)
 
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    """
-    POST /analyze
-    Body: { "url": "https://example.com" }
-    Returns full analysis JSON.
-    """
+    """Standard ML analysis (fast, no live DNS)."""
     data = request.get_json(silent=True) or {}
     url  = (data.get("url") or "").strip()
-
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
     try:
-        # 1. Extract features
-        features = extract_features(url)
-
-        # 2. Explain (includes prediction)
+        features    = extract_features(url)
         explainer   = _get_explainer()
         explanation = explainer.explain(features)
+        prob        = explanation["prediction_prob"]
+        label, verdict, risk_level = _verdict_from_prob(prob)
+        flags       = _build_flags(features)
 
-        prob  = explanation["prediction_prob"]
-        label = 1 if prob >= 0.5 else 0
+        result = {
+            "url":         url,
+            "label":       label,
+            "verdict":     verdict,
+            "probability": round(prob * 100, 2),
+            "risk_level":  risk_level,
+            "features":    features,
+            "explanation": explanation,
+            "flags":       flags,
+            "scanned_at":  datetime.now(timezone.utc).isoformat(),
+        }
 
-        # 3. Build risk level
-        if label == 1:
-            risk_level = "high"
-            verdict    = "PHISHING"
-        elif prob >= 0.35:
-            risk_level = "medium"
-            verdict    = "SUSPICIOUS"
-        else:
-            risk_level = "low"
-            verdict    = "LEGITIMATE"
-
-        # 4. Collect flagged features (red-flag summary)
-        flags = _build_flags(features, url)
-
-        return jsonify({
-            "url":           url,
-            "label":         label,
-            "verdict":       verdict,
-            "probability":   round(prob * 100, 2),
-            "risk_level":    risk_level,
-            "features":      features,
-            "explanation":   explanation,
-            "flags":         flags,
+        # Add to session history
+        _scan_history.appendleft({
+            "url":        url,
+            "verdict":    verdict,
+            "risk_level": risk_level,
+            "prob":       round(prob * 100, 1),
+            "scanned_at": datetime.now(timezone.utc).strftime("%H:%M:%S"),
         })
+
+        return jsonify(result)
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/report", methods=["POST"])
-def generate_report():
+# ══════════════════════════════════════════════════════════════════════════════
+#  ROUTES — Novelty Features
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/deep-scan", methods=["POST"])
+def deep_scan():
     """
-    POST /report
-    Body: same as /analyze — generates and returns a PDF report.
+    POST /deep-scan
+    Runs all 4 novelty modules on top of the standard ML analysis.
+    Returns comprehensive security intelligence report.
     """
     data = request.get_json(silent=True) or {}
     url  = (data.get("url") or "").strip()
-
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
     try:
-        from report_generator import generate_pdf_report
+        import tldextract
+        parse_url = url if "://" in url else "http://" + url
+        ext       = tldextract.extract(parse_url)
+        domain    = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
 
+        # ── Module 1: Standard ML ────────────────────────────────────────────
         features    = extract_features(url)
         explainer   = _get_explainer()
         explanation = explainer.explain(features)
+        prob        = explanation["prediction_prob"]
+        label, verdict, risk_level = _verdict_from_prob(prob)
+        flags       = _build_flags(features)
 
-        prob  = explanation["prediction_prob"]
-        label = 1 if prob >= 0.5 else 0
+        # ── Module 2: DNS & WHOIS Intelligence ──────────────────────────────
+        dns_result = {}
+        try:
+            from dns_inspector import inspect_domain
+            dns_result = inspect_domain(domain)
+        except Exception as e:
+            dns_result = {"error": str(e), "dns_risk_score": 0}
 
-        pdf_path = generate_pdf_report(
-            url=url,
-            label=label,
-            prob=prob,
-            features=features,
-            shap_explanation=explanation,
+        # ── Module 3: Typosquatting Detection ────────────────────────────────
+        typo_result = {}
+        try:
+            from typosquat_detector import analyse_typosquatting
+            typo_result = analyse_typosquatting(url)
+        except Exception as e:
+            typo_result = {"error": str(e), "typosquat_risk": "unknown"}
+
+        # ── Module 4: Threat Intelligence ────────────────────────────────────
+        intel_result = {}
+        try:
+            from threat_intel import check_threat_intel
+            intel_result = check_threat_intel(url)
+        except Exception as e:
+            intel_result = {"error": str(e), "threat_score": 0}
+
+        # ── Module 5: Mutation Analysis ───────────────────────────────────────
+        mutation_result = {}
+        try:
+            from mutation_analyzer import analyse_mutations
+            mutation_result = analyse_mutations(url)
+        except Exception as e:
+            mutation_result = {"error": str(e), "attack_surface": 0}
+
+        # ── Composite Risk Score ──────────────────────────────────────────────
+        ml_score      = prob * 100
+        dns_score     = dns_result.get("dns_risk_score", 0)
+        threat_score  = intel_result.get("threat_score", 0)
+        typo_score    = typo_result.get("similarity_score", 0)
+
+        composite = round(
+            ml_score     * 0.40 +
+            dns_score    * 0.25 +
+            threat_score * 0.25 +
+            typo_score   * 0.10,
+            1
+        )
+
+        if composite >= 60:
+            composite_verdict = "PHISHING"
+            composite_risk    = "high"
+        elif composite >= 35:
+            composite_verdict = "SUSPICIOUS"
+            composite_risk    = "medium"
+        else:
+            composite_verdict = "LEGITIMATE"
+            composite_risk    = "low"
+
+        result = {
+            "url":              url,
+            "domain":           domain,
+            # ML analysis
+            "label":            label,
+            "verdict":          composite_verdict,
+            "probability":      round(prob * 100, 2),
+            "risk_level":       composite_risk,
+            "composite_score":  composite,
+            "features":         features,
+            "explanation":      explanation,
+            "flags":            flags,
+            # Novelty modules
+            "dns_intelligence": dns_result,
+            "typosquatting":    typo_result,
+            "threat_intel":     intel_result,
+            "mutation_analysis":mutation_result,
+            # Score breakdown
+            "score_breakdown": {
+                "ml_model":         round(ml_score,     1),
+                "dns_whois":        round(dns_score,    1),
+                "threat_intel":     round(threat_score, 1),
+                "typosquatting":    round(typo_score,   1),
+                "composite":        composite,
+            },
+            "scanned_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Add to session history
+        _scan_history.appendleft({
+            "url":        url,
+            "verdict":    composite_verdict,
+            "risk_level": composite_risk,
+            "prob":       composite,
+            "scanned_at": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "deep":       True,
+        })
+
+        return jsonify(result)
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/dns-scan", methods=["POST"])
+def dns_scan():
+    """Lightweight endpoint: DNS + WHOIS only."""
+    data   = request.get_json(silent=True) or {}
+    url    = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    try:
+        import tldextract
+        from dns_inspector import inspect_domain
+        ext    = tldextract.extract(url if "://" in url else "http://" + url)
+        domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
+        return jsonify(inspect_domain(domain))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/typo-scan", methods=["POST"])
+def typo_scan():
+    """Lightweight endpoint: Typosquatting only."""
+    data = request.get_json(silent=True) or {}
+    url  = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    try:
+        from typosquat_detector import analyse_typosquatting
+        return jsonify(analyse_typosquatting(url))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/intel-scan", methods=["POST"])
+def intel_scan():
+    """Lightweight endpoint: Threat intelligence only."""
+    data = request.get_json(silent=True) or {}
+    url  = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    try:
+        from threat_intel import check_threat_intel
+        return jsonify(check_threat_intel(url))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/mutation-scan", methods=["POST"])
+def mutation_scan():
+    """Lightweight endpoint: Mutation analysis only."""
+    data = request.get_json(silent=True) or {}
+    url  = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    try:
+        from mutation_analyzer import analyse_mutations
+        return jsonify(analyse_mutations(url))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ROUTES — Session & Utilities
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/history")
+def history():
+    """GET /history — return session scan history."""
+    return jsonify(list(_scan_history))
+
+
+@app.route("/history/clear", methods=["POST"])
+def clear_history():
+    _scan_history.clear()
+    return jsonify({"status": "cleared"})
+
+
+@app.route("/report", methods=["POST"])
+def generate_report():
+    data = request.get_json(silent=True) or {}
+    url  = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    try:
+        from report_generator import generate_pdf_report
+        features    = extract_features(url)
+        explainer   = _get_explainer()
+        explanation = explainer.explain(features)
+        prob        = explanation["prediction_prob"]
+        label, _, _ = _verdict_from_prob(prob)
+        pdf_path    = generate_pdf_report(
+            url=url, label=label, prob=prob,
+            features=features, shap_explanation=explanation,
             chart_b64=explanation.get("chart_b64"),
         )
-
-        return send_file(
-            pdf_path,
-            mimetype="application/pdf",
-            as_attachment=True,
-            download_name="phishing_analysis_report.pdf",
-        )
-
+        return send_file(pdf_path, mimetype="application/pdf",
+                         as_attachment=True,
+                         download_name="phishing_analysis_report.pdf")
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -164,16 +399,13 @@ def generate_report():
 
 @app.route("/metrics")
 def metrics():
-    """GET /metrics — return stored model performance metrics."""
     return jsonify(_get_metrics())
 
 
 @app.route("/global-importance")
 def global_importance():
-    """GET /global-importance — return base64 global feature importance chart."""
     try:
-        explainer = _get_explainer()
-        chart     = explainer.global_importance_chart()
+        chart = _get_explainer().global_importance_chart()
         return jsonify({"chart_b64": chart})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -184,90 +416,15 @@ def health():
     return jsonify({"status": "ok", "models_loaded": _explainer is not None})
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _build_flags(features: dict, url: str) -> list:
-    """Build a human-readable list of red-flag findings."""
-    flags = []
-
-    if features["has_ip_address"]:
-        flags.append({
-            "severity": "high",
-            "message":  "Domain is a raw IP address — legitimate sites use domain names",
-        })
-    if not features["has_https"]:
-        flags.append({
-            "severity": "medium",
-            "message":  "URL does not use HTTPS — data could be intercepted",
-        })
-    if features["is_shortener"]:
-        flags.append({
-            "severity": "medium",
-            "message":  "URL uses a known shortening service — destination is obscured",
-        })
-    if features["has_phishing_keyword"]:
-        flags.append({
-            "severity": "high",
-            "message":  f"URL contains {features['phishing_keyword_count']} phishing-related keyword(s)",
-        })
-    if features["num_at_symbols"] > 0:
-        flags.append({
-            "severity": "high",
-            "message":  "@ symbol in URL — used to hide the real destination",
-        })
-    if features["subdomain_count"] >= 3:
-        flags.append({
-            "severity": "medium",
-            "message":  f"Excessive subdomains ({features['subdomain_count']}) — spoofing technique",
-        })
-    if features["url_length"] > 75:
-        flags.append({
-            "severity": "low",
-            "message":  f"Unusually long URL ({features['url_length']} chars) — may be obfuscating intent",
-        })
-    if features["double_slash_redirect"]:
-        flags.append({
-            "severity": "high",
-            "message":  "Double-slash redirect detected in path — common evasion trick",
-        })
-    if features["prefix_suffix_hyphen"]:
-        flags.append({
-            "severity": "medium",
-            "message":  "Domain starts or ends with a hyphen — invalid and suspicious",
-        })
-    if features["path_extension_suspicious"]:
-        flags.append({
-            "severity": "medium",
-            "message":  "Path ends with a suspicious file extension (.exe, .php, etc.)",
-        })
-    if features["suspicious_tld"]:
-        flags.append({
-            "severity": "low",
-            "message":  "Top-level domain is not among common trusted TLDs",
-        })
-    if features["entropy"] > 4.5:
-        flags.append({
-            "severity": "low",
-            "message":  f"High URL entropy ({features['entropy']}) — may indicate random/obfuscated domain",
-        })
-
-    return flags
-
-
 # ── Entry point ───────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     print("=" * 60)
-    print("  AI Phishing URL Detection")
+    print("  AI Phishing URL Detection  +  Novel Security Modules")
     print("  http://127.0.0.1:5000")
     print("=" * 60)
-
-    # Pre-load model on startup
     try:
         _get_explainer()
         print("[+] Model loaded successfully.")
     except Exception as e:
         print(f"[!] Model load failed: {e}")
-        print("[*] Models will be trained on first request.")
-
     app.run(debug=True, host="0.0.0.0", port=5000)
